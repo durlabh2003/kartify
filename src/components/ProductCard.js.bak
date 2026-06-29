@@ -1,0 +1,149 @@
+import React, { useState } from 'react';
+import { ExternalLink, Star, Truck, Heart, Share2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useToast } from './ToastProvider';
+
+export default function ProductCard({ product }) {
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+  const { addToast } = useToast();
+
+  const getBadgeStyle = (type) => {
+    switch (type) {
+      case 'Safe':     return { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-100',   dot: 'bg-blue-500' };
+      case 'Value':    return { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-100',  dot: 'bg-green-500' };
+      case 'Surprise': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100', dot: 'bg-purple-500' };
+      default:         return { bg: 'bg-slate-50',  text: 'text-slate-700',  border: 'border-slate-100',  dot: 'bg-slate-500' };
+    }
+  };
+
+  const badge = getBadgeStyle(product.pickType);
+
+  const handleLike = async () => {
+    if (isLiking || isLiked) return;
+    setIsLiking(true);
+    try {
+      const { error } = await supabase.from('liked_products').insert([{
+        product_name: product.name,
+        price: product.price,
+        platform: product.platform,
+        rating: product.rating,
+        image_url: product.imageUrl,
+        pick_type: product.pickType,
+      }]);
+      if (error) throw error;
+      setIsLiked(true);
+      addToast('Saved to your profile!', 'success');
+    } catch (err) {
+      console.error('Failed to like product:', err);
+      addToast('Could not save. Check your Supabase setup.', 'error');
+    } finally {
+      setIsLiking(false);
+    }
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+      title: product.name,
+      text: `Check out this product on ${product.platform}: ${product.name} for ₹${product.price}`,
+      url: product.url || window.location.href,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(`${shareData.text} – ${shareData.url}`);
+        addToast('Link copied to clipboard!', 'info');
+      }
+    } catch {
+      // user cancelled share
+    }
+  };
+
+  const [imgError, setImgError] = useState(false);
+  const imgSrc = imgError
+    ? `https://placehold.co/300x200/EEF2FF/4F46E5?text=${encodeURIComponent(product.name?.slice(0, 20) || 'Product')}`
+    : (product.imageUrl || `https://picsum.photos/seed/${encodeURIComponent(product.name || 'product')}/300/200`);
+
+  return (
+    <div className="w-72 bg-white rounded-2xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.06)] overflow-hidden flex flex-col hover:shadow-[0_4px_20px_rgba(79,70,229,0.12)] hover:-translate-y-0.5 transition-all duration-200 animate-fadeSlideUp">
+
+      {/* Pick Badge */}
+      <div className={`flex items-center gap-1.5 px-3 py-2 ${badge.bg} border-b ${badge.border}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+        <span className={`text-[11px] font-bold uppercase tracking-widest ${badge.text}`}>{product.pickType} Pick</span>
+      </div>
+
+      {/* Image */}
+      <div className="h-44 bg-slate-100 w-full relative overflow-hidden group">
+        <img
+          src={imgSrc}
+          alt={product.name}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          onError={() => setImgError(true)}
+        />
+        {/* Platform badge */}
+        <div className="absolute top-2 left-2 bg-white/95 backdrop-blur-sm text-xs px-2 py-1 rounded-lg font-semibold shadow-sm border border-white/50 text-slate-700">
+          {product.platform}
+        </div>
+        {/* Action buttons */}
+        <div className="absolute bottom-2 right-2 flex gap-1.5">
+          <button
+            onClick={handleShare}
+            className="p-1.5 bg-white/95 backdrop-blur-sm rounded-full shadow-sm hover:scale-110 active:scale-95 transition-transform border border-white/50"
+            title="Share product"
+          >
+            <Share2 size={14} className="text-slate-600" />
+          </button>
+          <button
+            onClick={handleLike}
+            disabled={isLiking}
+            className="p-1.5 bg-white/95 backdrop-blur-sm rounded-full shadow-sm hover:scale-110 active:scale-95 transition-transform border border-white/50 disabled:opacity-60"
+            title={isLiked ? 'Saved!' : 'Save to profile'}
+          >
+            <Heart
+              size={14}
+              className={`transition-all duration-200 ${isLiked ? 'fill-red-500 text-red-500 animate-bounceIn' : 'text-slate-600'}`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 flex flex-col flex-1">
+        <h3 className="font-semibold text-slate-900 text-sm leading-snug line-clamp-2 min-h-[40px]">
+          {product.name}
+        </h3>
+
+        <div className="flex items-center justify-between mt-2.5">
+          <span className="text-xl font-bold text-slate-900 tracking-tight">₹{Number(product.price).toLocaleString('en-IN')}</span>
+          <div className="flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+            <Star size={12} className="fill-amber-400 text-amber-400" />
+            <span className="text-xs font-bold text-amber-700">{product.rating}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2">
+          <Truck size={12} />
+          <span>{product.deliveryEstimate}</span>
+        </div>
+
+        {/* Why this */}
+        <div className="mt-3 p-3 bg-indigo-50/60 rounded-xl border border-indigo-100/80">
+          <p className="text-xs font-bold text-indigo-600 mb-1">Why this?</p>
+          <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{product.whyThis}</p>
+        </div>
+
+        <a
+          href={product.url || '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-semibold transition-colors text-sm shadow-sm shadow-indigo-200"
+        >
+          View on {product.platform}
+          <ExternalLink size={14} />
+        </a>
+      </div>
+    </div>
+  );
+}
