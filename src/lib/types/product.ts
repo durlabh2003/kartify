@@ -7,6 +7,9 @@ export interface Product {
   rating: number;
   category: string;
   brand?: string;
+  platform?: string;
+  pickType?: string;
+  whyThis?: string;
 }
 
 // DummyJSON specific response types
