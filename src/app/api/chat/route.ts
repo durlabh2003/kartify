@@ -32,40 +32,83 @@ export async function POST(req: Request) {
             id: messageId
           });
 
-          // If we haven't asked questions and user has only sent 1 message without full info:
-          if (userMessagesCount === 1 && (!hasBudget || !hasRecipient)) {
-            const question = `I can help you find that! To make sure I find the perfect match, who is the recipient, and what is your approximate budget?`;
-            controller.enqueue({
-              type: 'text-delta',
-              id: messageId,
-              delta: question
-            });
-            controller.enqueue({
-              type: 'text-end',
-              id: messageId
-            });
-            controller.close();
-            return;
+          // Detect if this is a refinement (we already recommended something or we are beyond 2 questions)
+          const hasProductsAlready = messages.some((m: any) => m.parts?.some((p: any) => p.type?.startsWith('tool-')));
+          const isRefinement = hasProductsAlready || userMessagesCount > 2;
+
+          if (!isRefinement) {
+            // If we haven't asked questions and user has only sent 1 message without full info:
+            if (userMessagesCount === 1 && (!hasBudget || !hasRecipient)) {
+              const question = `I can help you find that! To make sure I find the perfect match, who is the recipient, and what is your approximate budget?`;
+              controller.enqueue({
+                type: 'text-delta',
+                id: messageId,
+                delta: question
+              });
+              controller.enqueue({
+                type: 'text-end',
+                id: messageId
+              });
+              controller.close();
+              return;
+            }
+
+            // If we are at turn 2 and haven't asked about constraints/brands:
+            if (userMessagesCount === 2) {
+              const question = `Got it! Are there any specific brand constraints, preferred platforms (Amazon, Myntra, etc.), or key features you care about?`;
+              controller.enqueue({
+                type: 'text-delta',
+                id: messageId,
+                delta: question
+              });
+              controller.enqueue({
+                type: 'text-end',
+                id: messageId
+              });
+              controller.close();
+              return;
+            }
           }
 
-          // If we are at turn 2 and haven't asked about constraints/brands:
-          if (userMessagesCount === 2) {
-            const question = `Got it! Are there any specific brand constraints, preferred platforms (Amazon, Myntra, etc.), or key features you care about?`;
-            controller.enqueue({
-              type: 'text-delta',
-              id: messageId,
-              delta: question
-            });
-            controller.enqueue({
-              type: 'text-end',
-              id: messageId
-            });
-            controller.close();
-            return;
+          // Identify search term & platform restrictions based on user history/message
+          let searchTerm = 'laptop';
+          let eligiblePlatforms: string[] = ['Amazon', 'Flipkart'];
+          const lowerMsg = lastUserMsg.toLowerCase();
+          
+          // Look through history for product category cues
+          const fullChatText = messages.map((m: any) => m.content || '').join(' ').toLowerCase();
+          if (fullChatText.includes('phone') || fullChatText.includes('mobile')) {
+            searchTerm = 'smartphones';
+          } else if (fullChatText.includes('watch')) {
+            searchTerm = 'watches';
+          } else if (fullChatText.includes('fragrance') || fullChatText.includes('perfume') || fullChatText.includes('cosmetics') || fullChatText.includes('skincare')) {
+            searchTerm = 'fragrances';
+            eligiblePlatforms = ['Nykaa', 'Amazon'];
+          } else if (fullChatText.includes('shoe') || fullChatText.includes('bag') || fullChatText.includes('clothing') || fullChatText.includes('shirt')) {
+            searchTerm = 'shoes';
+            eligiblePlatforms = ['Myntra', 'Flipkart', 'Amazon', 'Meesho'];
+          } else if (fullChatText.includes('headphone') || fullChatText.includes('earbud') || fullChatText.includes('audio')) {
+            searchTerm = 'audio';
           }
 
-          // Otherwise, perform search recommendation:
-          const intro = `Analyzing your request: "${lastUserMsg}"...\nI am filtering out irrelevant platforms based on category to optimize search results.\n`;
+          // Handle platform restriction adjustments
+          if (lowerMsg.includes('amazon')) {
+            eligiblePlatforms = ['Amazon'];
+          } else if (lowerMsg.includes('flipkart')) {
+            eligiblePlatforms = ['Flipkart'];
+          } else if (lowerMsg.includes('myntra')) {
+            eligiblePlatforms = ['Myntra'];
+          } else if (lowerMsg.includes('nykaa')) {
+            eligiblePlatforms = ['Nykaa'];
+          } else if (lowerMsg.includes('meesho')) {
+            eligiblePlatforms = ['Meesho'];
+          }
+
+          // 3. Output search/refinement intro
+          let intro = `Analyzing your request: "${lastUserMsg}"...\nI am filtering out irrelevant platforms based on category to optimize search results.\n`;
+          if (isRefinement) {
+            intro = `Applying refinement request: "${lastUserMsg}" to search results...\n`;
+          }
           controller.enqueue({
             type: 'text-delta',
             id: messageId,
@@ -73,28 +116,6 @@ export async function POST(req: Request) {
           });
           
           await new Promise(resolve => setTimeout(resolve, 800));
-
-          // Identify search term
-          let searchTerm = 'laptop';
-          let eligiblePlatforms: string[] = ['Amazon', 'Flipkart'];
-          const lowerMsg = lastUserMsg.toLowerCase();
-          
-          if (lowerMsg.includes('phone') || lowerMsg.includes('mobile')) {
-            searchTerm = 'smartphones';
-            eligiblePlatforms = ['Amazon', 'Flipkart'];
-          } else if (lowerMsg.includes('watch')) {
-            searchTerm = 'watches';
-            eligiblePlatforms = ['Amazon', 'Flipkart'];
-          } else if (lowerMsg.includes('fragrance') || lowerMsg.includes('perfume') || lowerMsg.includes('cosmetics') || lowerMsg.includes('skincare')) {
-            searchTerm = 'fragrances';
-            eligiblePlatforms = ['Nykaa', 'Amazon']; // Eliminated Myntra/Flipkart/Meesho
-          } else if (lowerMsg.includes('shoe') || lowerMsg.includes('bag') || lowerMsg.includes('clothing') || lowerMsg.includes('shirt')) {
-            searchTerm = 'shoes';
-            eligiblePlatforms = ['Myntra', 'Flipkart', 'Amazon', 'Meesho']; // Eliminated Nykaa
-          } else if (lowerMsg.includes('headphone') || lowerMsg.includes('earbud') || lowerMsg.includes('audio')) {
-            searchTerm = 'audio';
-            eligiblePlatforms = ['Amazon', 'Flipkart'];
-          }
 
           // 4. Emit tool-input-start and tool-input-available
           const toolCallId = `call_${Math.random().toString(36).substring(2, 9)}`;
@@ -107,15 +128,43 @@ export async function POST(req: Request) {
             type: 'tool-input-available',
             toolCallId,
             toolName: 'findProducts',
-            input: { search: searchTerm, eligible_platforms: eligiblePlatforms }
+            input: { search: searchTerm, eligible_platforms: eligiblePlatforms.join(',') }
           });
 
           await new Promise(resolve => setTimeout(resolve, 1000));
 
-          // Fetch real products from productService
+          // Fetch products from productService
           let products = await productService.findRecommendations({ 
             search: searchTerm, 
             eligible_platforms: eligiblePlatforms 
+          });
+
+          // Modify products based on refinement parameters (e.g. cheaper/premium)
+          const isCheaper = lowerMsg.includes('cheaper') || lowerMsg.includes('less') || lowerMsg.includes('low');
+          const isPremium = lowerMsg.includes('premium') || lowerMsg.includes('expensive') || lowerMsg.includes('quality') || lowerMsg.includes('high');
+
+          products = products.map((p, idx) => {
+            let adjustedPrice = p.price;
+            let titlePrefix = '';
+            
+            if (isCheaper) {
+              adjustedPrice = Math.round(p.price * 0.6);
+              titlePrefix = 'Budget ';
+            } else if (isPremium) {
+              adjustedPrice = Math.round(p.price * 1.8);
+              titlePrefix = 'Premium ';
+            }
+
+            return {
+              ...p,
+              title: titlePrefix + p.title,
+              price: adjustedPrice,
+              whyThis: isCheaper 
+                ? `Refined budget option. Offers high value for money at just $${adjustedPrice}.` 
+                : isPremium 
+                  ? `Refined premium option with top-tier builds and features.` 
+                  : p.whyThis
+            };
           });
 
           // 6. Emit tool-output-available
@@ -128,11 +177,19 @@ export async function POST(req: Request) {
           await new Promise(resolve => setTimeout(resolve, 800));
 
           // 7. Emit concluding message text with Safe, Value, Surprise details
-          const outro = `\nBased on your preferences, I searched ${eligiblePlatforms.join(', ')} and eliminated low-probability sites. Here are my top 3 recommendations:
+          let outro = `\nBased on your preferences, I searched ${eligiblePlatforms.join(', ')} and eliminated low-probability sites. Here are my top 3 recommendations:
 - **Safe Pick**: Well-trusted brand with excellent ratings on ${products[0]?.platform}.
 - **Value Pick**: Best price-to-performance ratio on ${products[1]?.platform}.
 - **Surprise Pick**: A great alternative choice you'll find on ${products[2]?.platform}.
 Let me know if you would like to refine the search!`;
+
+          if (isRefinement) {
+            outro = `\nI updated the search results to reflect your refinement request. Here are the adjusted picks:
+- **Safe Pick**: ${products[0]?.title} on ${products[0]?.platform}.
+- **Value Pick**: ${products[1]?.title} on ${products[1]?.platform}.
+- **Surprise Pick**: ${products[2]?.title} on ${products[2]?.platform}.
+Let me know if you need to adjust anything else!`;
+          }
           
           controller.enqueue({
             type: 'text-delta',
