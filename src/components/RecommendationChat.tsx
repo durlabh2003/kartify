@@ -31,6 +31,80 @@ export function RecommendationChat() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
+  // Listen to search triggers from Profile Drawer
+  useEffect(() => {
+    const handleTriggerSearch = (e: Event) => {
+      const query = (e as CustomEvent).detail;
+      if (query) {
+        sendMessage({ text: query });
+        saveSearchToHistory(query);
+        saveRecipientFromQuery(query);
+      }
+    };
+    window.addEventListener('kartify_trigger_search', handleTriggerSearch);
+    return () => window.removeEventListener('kartify_trigger_search', handleTriggerSearch);
+  }, [sendMessage]);
+
+  const saveSearchToHistory = (query: string) => {
+    try {
+      const history = JSON.parse(localStorage.getItem('kartify_search_history') || '[]');
+      const filtered = history.filter((h: any) => h.query.toLowerCase() !== query.toLowerCase());
+      const updated = [
+        { id: Date.now().toString(), query, date: new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) },
+        ...filtered
+      ].slice(0, 10);
+      localStorage.setItem('kartify_search_history', JSON.stringify(updated));
+    } catch (e) {
+      console.error('History save error:', e);
+    }
+  };
+
+  const saveRecipientFromQuery = (query: string) => {
+    const lower = query.toLowerCase();
+    let relation = '';
+    let name = '';
+    
+    if (lower.includes('mom') || lower.includes('mother')) {
+      relation = 'Mom';
+      name = 'Mother';
+    } else if (lower.includes('dad') || lower.includes('father')) {
+      relation = 'Dad';
+      name = 'Father';
+    } else if (lower.includes('sister')) {
+      relation = 'Sister';
+      name = 'Priya';
+    } else if (lower.includes('brother')) {
+      relation = 'Brother';
+      name = 'Rahul';
+    } else if (lower.includes('friend')) {
+      relation = 'Friend';
+      name = 'Amit';
+    } else if (lower.includes('wife')) {
+      relation = 'Wife';
+      name = 'Anjali';
+    } else if (lower.includes('husband')) {
+      relation = 'Husband';
+      name = 'Vikram';
+    }
+
+    if (relation) {
+      try {
+        const recipients = JSON.parse(localStorage.getItem('kartify_saved_recipients') || '[]');
+        if (!recipients.some((r: any) => r.relation.toLowerCase() === relation.toLowerCase())) {
+          const newRecipient = {
+            id: Date.now().toString(),
+            name,
+            relation,
+            interests: lower.includes('phone') || lower.includes('tech') || lower.includes('laptop') || lower.includes('audio') ? 'Tech & Gadgets' : 'Fashion & Gifting'
+          };
+          localStorage.setItem('kartify_saved_recipients', JSON.stringify([newRecipient, ...recipients]));
+        }
+      } catch (e) {
+        console.error('Recipient save error:', e);
+      }
+    }
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
@@ -81,11 +155,15 @@ export function RecommendationChat() {
     e.preventDefault();
     if (!localInput.trim()) return;
     sendMessage({ text: localInput });
+    saveSearchToHistory(localInput);
+    saveRecipientFromQuery(localInput);
     setLocalInput('');
   };
 
   const handleQuickPrompt = (query: string) => {
     sendMessage({ text: query });
+    saveSearchToHistory(query);
+    saveRecipientFromQuery(query);
   };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
