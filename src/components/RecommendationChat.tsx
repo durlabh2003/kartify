@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { ProductCard } from './ProductCard';
 import { Product } from '../lib/types/product';
-import { Send, Loader2, Sparkles, ShoppingBag, Gift, Laptop, Sparkle, ShieldAlert } from 'lucide-react';
+import { Send, Loader2, Sparkles, ShoppingBag, Gift, Laptop, Sparkle, ShieldAlert, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -16,7 +16,6 @@ const QUICK_PROMPTS = [
 
 export function RecommendationChat() {
   const chatContext = useChat();
-  
   const { messages, sendMessage, status } = chatContext;
   const isLoading = status === 'submitted' || status === 'streaming';
   
@@ -29,6 +28,54 @@ export function RecommendationChat() {
   console.log('RecommendationChat messages changed:', { messages, status, isLoading });
   
   const [localInput, setLocalInput] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.lang = 'en-IN'; // Optimized language tag for Indian English and Hinglish terms
+
+        rec.onstart = () => {
+          setIsListening(true);
+        };
+
+        rec.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          setLocalInput((prev) => (prev ? prev + ' ' + transcript : transcript));
+        };
+
+        rec.onerror = (event: any) => {
+          console.error('Speech recognition error:', event);
+          setIsListening(false);
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = rec;
+      }
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in this browser. Please try using Google Chrome.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+    }
+  };
 
   const onFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,17 +232,31 @@ export function RecommendationChat() {
           <input
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
-            placeholder="Type your request here..."
-            className="w-full bg-slate-950/80 border border-white/10 rounded-full px-6 py-4 pr-14 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all text-sm"
+            placeholder={isListening ? "Listening... Speak now..." : "Type your request here..."}
+            className="w-full bg-slate-950/80 border border-white/10 rounded-full px-6 py-4 pr-28 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all text-sm"
             disabled={isLoading}
           />
-          <button
-            type="submit"
-            disabled={isLoading || !localInput.trim()}
-            className="absolute right-2 p-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
-          >
-            <Send size={16} />
-          </button>
+          <div className="absolute right-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`p-3 rounded-full border transition-all ${
+                isListening 
+                  ? 'bg-red-500/20 border-red-500/40 text-red-400 animate-pulse' 
+                  : 'bg-white/5 border-white/5 text-white/60 hover:text-white hover:bg-white/10'
+              }`}
+              title={isListening ? "Stop listening" : "Record voice input"}
+            >
+              <Mic size={16} />
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !localInput.trim()}
+              className="p-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
+            >
+              <Send size={16} />
+            </button>
+          </div>
         </form>
       </div>
     </div>
