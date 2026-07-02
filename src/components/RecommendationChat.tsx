@@ -3,9 +3,115 @@
 import { useChat } from '@ai-sdk/react';
 import { ProductCard } from './ProductCard';
 import { Product } from '../lib/types/product';
-import { Send, Loader2, Sparkles, ShoppingBag, Gift, Laptop, Sparkle, ShieldAlert, Mic } from 'lucide-react';
+import { Send, Loader2, Sparkles, ShoppingBag, Gift, Laptop, Sparkle, ShieldAlert, Mic, Search, Brain, Zap } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../lib/supabase';
+
+// ── Animated thinking indicator ──────────────────────────────────────────────
+const THINKING_STAGES = [
+  { icon: Brain,  label: 'Thinking...',           color: 'text-violet-400',  bg: 'bg-violet-500/10', border: 'border-violet-500/20' },
+  { icon: Search, label: 'Searching stores...',    color: 'text-blue-400',    bg: 'bg-blue-500/10',   border: 'border-blue-500/20'   },
+  { icon: Zap,    label: 'Finding best deals...', color: 'text-emerald-400', bg: 'bg-emerald-500/10',border: 'border-emerald-500/20'},
+];
+
+function ThinkingIndicator() {
+  const [stageIdx, setStageIdx] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStageIdx(prev => (prev + 1) % THINKING_STAGES.length);
+    }, 1400);
+    return () => clearInterval(interval);
+  }, []);
+
+  const stage = THINKING_STAGES[stageIdx];
+  const Icon = stage.icon;
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={stageIdx}
+        initial={{ opacity: 0, y: 6, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -6, scale: 0.95 }}
+        transition={{ duration: 0.25 }}
+        className={`flex items-center gap-2.5 px-4 py-2.5 rounded-full border w-fit text-xs font-medium ${stage.bg} ${stage.border} ${stage.color}`}
+      >
+        <Icon size={13} className="animate-pulse" />
+        <span>{stage.label}</span>
+        <span className="flex gap-0.5">
+          {[0,1,2].map(i => (
+            <motion.span
+              key={i}
+              className={`w-1 h-1 rounded-full ${stage.color.replace('text-', 'bg-')}`}
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.2 }}
+            />
+          ))}
+        </span>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+// ── Quick reply option detection ─────────────────────────────────────────────
+function detectQuickOptions(text: string): string[] | null {
+  // Recipient / who is it for
+  if (/(who|whom).{0,30}(for|is|shopping|buying|gift)|(for whom|recipient|buying this for|gift.*for|shopping.*for)/i.test(text)) {
+    return ['Myself', 'Mom / Mother', 'Dad / Father', 'Partner / Spouse', 'Friend', 'Sibling', 'Kid / Child'];
+  }
+  // Budget / price
+  if (/(budget|how much|price range|spend|afford|cost|inr|rupee)/i.test(text)) {
+    return ['Under ₹500', '₹500 – ₹1,000', '₹1,000 – ₹3,000', '₹3,000 – ₹5,000', 'Above ₹5,000'];
+  }
+  // Occasion / purpose
+  if (/(occasion|event|celebrat|purpose|reason|why)/i.test(text)) {
+    return ['Birthday 🎂', 'Anniversary 💍', 'Festival / Diwali 🪔', 'Daily Use', 'Just Because 🎁'];
+  }
+  // Category / product type
+  if (/(type|kind|category|what.*product|what.*looking|what.*need|interest|hobby|hobbies|thinking of)/i.test(text)) {
+    return ['Electronics', 'Fashion / Clothing', 'Shoes / Footwear', 'Skincare / Beauty', 'Books', 'Food & Gourmet', 'Accessories'];
+  }
+  // Platform preference
+  if (/(platform|website|site|where.*shop|prefer.*shop|online store)/i.test(text)) {
+    return ['Amazon', 'Flipkart', 'Myntra', 'Nykaa', 'Meesho', 'Any Platform'];
+  }
+  // Use case / style
+  if (/(daily|gym|office|workout|casual|formal|occasion|style|wear|activity)/i.test(text)) {
+    return ['Casual / Daily Wear', 'Formal / Office', 'Gym / Sports', 'Party / Festive', 'Outdoor / Travel'];
+  }
+  // Gender / who is using
+  if (/(gender|male|female|men|women|boy|girl|himself|herself)/i.test(text)) {
+    return ['Men', 'Women', 'Kids / Unisex'];
+  }
+  return null;
+}
+
+function QuickReplies({ text, onSelect, disabled }: { text: string; onSelect: (v: string) => void; disabled: boolean }) {
+  const options = detectQuickOptions(text);
+  if (!options) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.2 }}
+      className="flex flex-wrap gap-2 mt-2 ml-1"
+    >
+      {options.map(opt => (
+        <button
+          key={opt}
+          onClick={() => !disabled && onSelect(opt)}
+          disabled={disabled}
+          className="px-3 py-1.5 text-xs rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+        >
+          {opt}
+        </button>
+      ))}
+    </motion.div>
+  );
+}
 
 const QUICK_PROMPTS = [
   { label: '🎁 Gift for Dad', icon: Gift, query: 'Need a birthday gift for my Dad, budget around 3000 Rs' },
@@ -29,7 +135,25 @@ export function RecommendationChat() {
   
   const [localInput, setLocalInput] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [lastUserMsgId, setLastUserMsgId] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   // Listen to search triggers from Profile Drawer
   useEffect(() => {
@@ -43,9 +167,9 @@ export function RecommendationChat() {
     };
     window.addEventListener('kartify_trigger_search', handleTriggerSearch);
     return () => window.removeEventListener('kartify_trigger_search', handleTriggerSearch);
-  }, [sendMessage]);
+  }, [sendMessage, user]); // Added user to dependencies
 
-  const saveSearchToHistory = (query: string) => {
+  const saveSearchToHistory = async (query: string) => {
     try {
       const history = JSON.parse(localStorage.getItem('kartify_search_history') || '[]');
       const filtered = history.filter((h: any) => h.query.toLowerCase() !== query.toLowerCase());
@@ -54,12 +178,20 @@ export function RecommendationChat() {
         ...filtered
       ].slice(0, 10);
       localStorage.setItem('kartify_search_history', JSON.stringify(updated));
+
+      if (user) {
+        await supabase.from('search_history').insert({
+          user_id: user.id,
+          query,
+          occasion: query.toLowerCase().includes('gift') ? 'Gifting' : 'General'
+        });
+      }
     } catch (e) {
       console.error('History save error:', e);
     }
   };
 
-  const saveRecipientFromQuery = (query: string) => {
+  const saveRecipientFromQuery = async (query: string) => {
     const lower = query.toLowerCase();
     let relation = '';
     let name = '';
@@ -90,14 +222,34 @@ export function RecommendationChat() {
     if (relation) {
       try {
         const recipients = JSON.parse(localStorage.getItem('kartify_saved_recipients') || '[]');
+        const interests = lower.includes('phone') || lower.includes('tech') || lower.includes('laptop') || lower.includes('audio') ? 'Tech & Gadgets' : 'Fashion & Gifting';
         if (!recipients.some((r: any) => r.relation.toLowerCase() === relation.toLowerCase())) {
           const newRecipient = {
             id: Date.now().toString(),
             name,
             relation,
-            interests: lower.includes('phone') || lower.includes('tech') || lower.includes('laptop') || lower.includes('audio') ? 'Tech & Gadgets' : 'Fashion & Gifting'
+            interests
           };
           localStorage.setItem('kartify_saved_recipients', JSON.stringify([newRecipient, ...recipients]));
+        }
+
+        if (user) {
+          // Check if recipient relationship exists in db first
+          const { data } = await supabase
+            .from('saved_recipients')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('relation', relation);
+          
+          if (!data || data.length === 0) {
+            await supabase.from('saved_recipients').insert({
+              user_id: user.id,
+              name,
+              relation,
+              interests,
+              age_group: 'All'
+            });
+          }
         }
       } catch (e) {
         console.error('Recipient save error:', e);
@@ -153,15 +305,21 @@ export function RecommendationChat() {
 
   const onFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!localInput.trim()) return;
-    sendMessage({ text: localInput });
-    saveSearchToHistory(localInput);
-    saveRecipientFromQuery(localInput);
+    if (!localInput.trim() || isLoading) return;
+    const msg = localInput.trim();
+    setLastUserMsgId(msg + Date.now());
     setLocalInput('');
+    sendMessage({ role: 'user', content: msg });
+  };
+
+  const handleQuickReply = (val: string) => {
+    if (isLoading) return;
+    setLastUserMsgId(val + Date.now());
+    sendMessage({ role: 'user', content: val });
   };
 
   const handleQuickPrompt = (query: string) => {
-    sendMessage({ text: query });
+    sendMessage({ role: 'user', content: query });
     saveSearchToHistory(query);
     saveRecipientFromQuery(query);
   };
@@ -277,11 +435,27 @@ export function RecommendationChat() {
                       </div>
                     );
                   } else {
+                    // Tool is actively running — show searching indicator
                     return (
-                      <div key={toolCallId} className="flex items-center gap-2 text-white/50 bg-white/5 px-4 py-2.5 rounded-full text-xs w-fit mt-2 border border-white/10">
-                        <Loader2 size={13} className="animate-spin text-emerald-400" />
-                        Searching active stores (filtering platforms)...
-                      </div>
+                      <motion.div
+                        key={toolCallId}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-2.5 text-blue-400 bg-blue-500/10 px-4 py-2.5 rounded-full text-xs font-medium w-fit mt-2 border border-blue-500/20"
+                      >
+                        <Search size={13} className="animate-pulse" />
+                        Searching live stores...
+                        <span className="flex gap-0.5">
+                          {[0,1,2].map(i => (
+                            <motion.span
+                              key={i}
+                              className="w-1 h-1 rounded-full bg-blue-400"
+                              animate={{ opacity: [0.3, 1, 0.3] }}
+                              transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.2 }}
+                            />
+                          ))}
+                        </span>
+                      </motion.div>
                     );
                   }
                 }
@@ -292,11 +466,31 @@ export function RecommendationChat() {
           ))}
         </AnimatePresence>
         
+        {/* Quick replies after last AI message */}
+        {!isLoading && (() => {
+          const lastAI = [...messages].reverse().find(m => m.role === 'assistant');
+          const lastUser = [...messages].reverse().find(m => m.role === 'user');
+          // Only show if last message is from AI (user hasn't replied yet)
+          if (!lastAI || (lastUser && messages.indexOf(lastUser) > messages.indexOf(lastAI))) return null;
+          const aiText = lastAI.parts
+            ?.filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text || '')
+            .join(' ') || '';
+          if (!aiText.includes('?')) return null;
+          return (
+            <AnimatePresence>
+              <QuickReplies
+                key={lastAI.id}
+                text={aiText}
+                onSelect={handleQuickReply}
+                disabled={isLoading}
+              />
+            </AnimatePresence>
+          );
+        })()}
+
         {isLoading && messages[messages.length - 1]?.role === 'user' && (
-          <div className="flex items-center gap-2 text-white/50 text-xs bg-white/5 px-4 py-2.5 rounded-full border border-white/5 w-fit">
-            <Loader2 size={13} className="animate-spin text-emerald-400" />
-            Kartify is thinking...
-          </div>
+          <ThinkingIndicator />
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -310,7 +504,7 @@ export function RecommendationChat() {
           <input
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
-            placeholder={isListening ? "Listening... Speak now..." : "Type your request here..."}
+            placeholder={isListening ? "Listening... Speak now..." : "Type your own answer or pick above..."}
             className="w-full bg-slate-950/80 border border-white/10 rounded-full px-6 py-4 pr-28 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all text-sm"
             disabled={isLoading}
           />

@@ -95,7 +95,7 @@ export function ProductCard({ product }: ProductCardProps) {
     }
   };
 
-  const buyUrl = getSearchUrl(product.platform || 'Amazon', product.title);
+  const buyUrl = product.url || getSearchUrl(product.platform || 'Amazon', product.title);
   const displayImage = product.imageUrl || getPlaceholderImage(product.title, product.pickType || 'Safe');
 
   return (
@@ -142,7 +142,7 @@ export function ProductCard({ product }: ProductCardProps) {
             {product.title}
           </h3>
           <span className="text-emerald-400 font-extrabold text-base block mt-0.5">
-            ${product.price}
+            ₹{product.price.toLocaleString('en-IN')}
           </span>
         </div>
 

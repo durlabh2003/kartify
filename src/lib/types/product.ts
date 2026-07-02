@@ -10,6 +10,7 @@ export interface Product {
   platform?: string;
   pickType?: string;
   whyThis?: string;
+  url?: string; // Direct product link from live search (Serper/Tavily)
 }
 
 // DummyJSON specific response types

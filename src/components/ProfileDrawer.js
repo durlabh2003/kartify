@@ -11,14 +11,31 @@ export default function ProfileDrawer({ isOpen, onClose }) {
   const [savedRecipients, setSavedRecipients] = useState([]);
   const [searchHistory, setSearchHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
   const { addToast } = useToast();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    fetchUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
       fetchLikedProducts();
-      loadLocalData();
+      loadData();
     }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   const fetchLikedProducts = async () => {
     setLoading(true);
@@ -37,14 +54,39 @@ export default function ProfileDrawer({ isOpen, onClose }) {
     }
   };
 
-  const loadLocalData = () => {
-    try {
-      const history = JSON.parse(localStorage.getItem('kartify_search_history') || '[]');
-      const recipients = JSON.parse(localStorage.getItem('kartify_saved_recipients') || '[]');
-      setSearchHistory(history);
-      setSavedRecipients(recipients);
-    } catch (e) {
-      console.error('Local data load error:', e);
+  const loadData = async () => {
+    if (user) {
+      try {
+        const { data: recipientsData, error: errRec } = await supabase
+          .from('saved_recipients')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        const { data: historyData, error: errHist } = await supabase
+          .from('search_history')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (recipientsData && !errRec) setSavedRecipients(recipientsData);
+        if (historyData && !errHist) {
+          setSearchHistory(historyData.map((h) => ({
+            id: h.id,
+            query: h.query,
+            date: new Date(h.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+          })));
+        }
+      } catch (e) {
+        console.error('Supabase load error:', e);
+      }
+    } else {
+      try {
+        const history = JSON.parse(localStorage.getItem('kartify_search_history') || '[]');
+        const recipients = JSON.parse(localStorage.getItem('kartify_saved_recipients') || '[]');
+        setSearchHistory(history);
+        setSavedRecipients(recipients);
+      } catch (e) {
+        console.error('Local data load error:', e);
+      }
     }
   };
 
@@ -59,22 +101,34 @@ export default function ProfileDrawer({ isOpen, onClose }) {
     }
   };
 
-  const handleDeleteRecipient = (id) => {
+  const handleDeleteRecipient = async (id) => {
     try {
-      const filtered = savedRecipients.filter(r => r.id !== id);
-      localStorage.setItem('kartify_saved_recipients', JSON.stringify(filtered));
-      setSavedRecipients(filtered);
+      if (user) {
+        const { error } = await supabase.from('saved_recipients').delete().eq('id', id);
+        if (error) throw error;
+        setSavedRecipients(prev => prev.filter(r => r.id !== id));
+      } else {
+        const filtered = savedRecipients.filter(r => r.id !== id);
+        localStorage.setItem('kartify_saved_recipients', JSON.stringify(filtered));
+        setSavedRecipients(filtered);
+      }
       addToast('Removed recipient profile', 'info');
     } catch (e) {
       addToast('Could not remove recipient', 'error');
     }
   };
 
-  const handleDeleteHistory = (id) => {
+  const handleDeleteHistory = async (id) => {
     try {
-      const filtered = searchHistory.filter(h => h.id !== id);
-      localStorage.setItem('kartify_search_history', JSON.stringify(filtered));
-      setSearchHistory(filtered);
+      if (user) {
+        const { error } = await supabase.from('search_history').delete().eq('id', id);
+        if (error) throw error;
+        setSearchHistory(prev => prev.filter(h => h.id !== id));
+      } else {
+        const filtered = searchHistory.filter(h => h.id !== id);
+        localStorage.setItem('kartify_search_history', JSON.stringify(filtered));
+        setSearchHistory(filtered);
+      }
       addToast('Removed search history item', 'info');
     } catch (e) {
       addToast('Could not remove search', 'error');
