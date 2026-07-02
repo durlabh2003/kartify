@@ -388,7 +388,7 @@ export function RecommendationChat() {
               animate={{ opacity: 1, y: 0 }}
               className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} w-full gap-3`}
             >
-              {m.parts.map((part, idx) => {
+              {(m.parts || [{ type: 'text', text: m.content }]).map((part: any, idx: number) => {
                 if (part.type === 'text') {
                   return (
                     <div 
