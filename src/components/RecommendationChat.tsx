@@ -462,6 +462,58 @@ export function RecommendationChat() {
                 
                 return null;
               })}
+
+              {/* Standard Vercel AI SDK tool rendering */}
+              {m.toolInvocations?.map((toolInvocation: any) => {
+                const { toolCallId, toolName, state, result } = toolInvocation;
+                
+                if (state === 'result') {
+                  const products: Product[] = result;
+                  if (!products || products.length === 0) return (
+                    <div key={toolCallId} className="text-white/40 italic text-xs mt-2 flex items-center gap-1.5 bg-white/5 px-4 py-2.5 rounded-xl border border-white/5">
+                      <ShieldAlert size={14} className="text-amber-400" /> No products found for that search.
+                    </div>
+                  );
+
+                  return (
+                    <div key={toolCallId} className="w-full mt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {products.map((product: Product) => (
+                          <ProductCard key={product.id} product={product} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                } else if (state === 'error') {
+                  return (
+                    <div key={toolCallId} className="text-red-400 italic text-xs mt-2 flex items-center gap-1.5 bg-red-500/10 px-4 py-2.5 rounded-xl border border-red-500/20">
+                      <ShieldAlert size={14} /> Error searching database.
+                    </div>
+                  );
+                } else {
+                  return (
+                    <motion.div
+                      key={toolCallId}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-2.5 text-blue-400 bg-blue-500/10 px-4 py-2.5 rounded-full text-xs font-medium w-fit mt-2 border border-blue-500/20"
+                    >
+                      <Search size={13} className="animate-pulse" />
+                      Searching live stores...
+                      <span className="flex gap-0.5">
+                        {[0,1,2].map(i => (
+                          <motion.span
+                            key={i}
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
+                            className="w-1 h-1 bg-current rounded-full"
+                          />
+                        ))}
+                      </span>
+                    </motion.div>
+                  );
+                }
+              })}
             </motion.div>
           ))}
         </AnimatePresence>
