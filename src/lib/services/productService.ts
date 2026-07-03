@@ -99,7 +99,19 @@ async function searchSerper(query: string, eligiblePlatforms: string[], maxBudge
     const data = await res.json();
     const organic = data.organic || [];
 
-    const products = await Promise.all(organic.map(async (item: any) => {
+    // Filter out generic search and category pages to ensure we only recommend SPECIFIC single products
+    const productPagesOnly = organic.filter((item: any) => {
+      if (!item.link) return false;
+      const url = item.link.toLowerCase();
+      // Exclude obvious search/category pages
+      if (url.includes('/s?k=')) return false; // Amazon search
+      if (url.includes('/search')) return false; // Flipkart/Myntra/Nykaa search
+      if (url.includes('/browse')) return false; // Generic browse pages
+      if (url.includes('/c/')) return false; // Category pages
+      return true;
+    });
+
+    const products = await Promise.all(productPagesOnly.map(async (item: any) => {
       let platform = 'Amazon';
       const url = item.link.toLowerCase();
       if (url.includes('flipkart.com')) platform = 'Flipkart';
