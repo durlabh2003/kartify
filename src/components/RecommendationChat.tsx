@@ -309,17 +309,17 @@ export function RecommendationChat() {
     const msg = localInput.trim();
     setLastUserMsgId(msg + Date.now());
     setLocalInput('');
-    sendMessage({ role: 'user', content: msg });
+    sendMessage({ role: 'user', text: msg });
   };
 
   const handleQuickReply = (val: string) => {
     if (isLoading) return;
     setLastUserMsgId(val + Date.now());
-    sendMessage({ role: 'user', content: val });
+    sendMessage({ role: 'user', text: val });
   };
 
   const handleQuickPrompt = (query: string) => {
-    sendMessage({ role: 'user', content: query });
+    sendMessage({ role: 'user', text: query });
     saveSearchToHistory(query);
     saveRecipientFromQuery(query);
   };
@@ -388,7 +388,7 @@ export function RecommendationChat() {
               animate={{ opacity: 1, y: 0 }}
               className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} w-full gap-3`}
             >
-              {(m.parts || [{ type: 'text', text: m.content }]).map((part: any, idx: number) => {
+              {(m.parts || [{ type: 'text', text: (m as any).text || (m as any).content }]).map((part: any, idx: number) => {
                 if (part.type === 'text') {
                   return (
                     <div 
