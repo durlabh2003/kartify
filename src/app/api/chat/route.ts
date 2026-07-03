@@ -166,9 +166,7 @@ export async function POST(req: Request) {
       },
     });
     const freeModels = [
-      'nvidia/nemotron-3-nano-30b-a3b:free',
-      'google/gemma-4-26b-a4b-it:free',
-      'liquid/lfm-2.5-1.2b-instruct:free',
+      'meta-llama/llama-3.3-70b-instruct:free'
     ];
     const modelIndex = Math.floor(Date.now() / 30000) % freeModels.length;
     model = openrouter.chatModel(freeModels[modelIndex]);
