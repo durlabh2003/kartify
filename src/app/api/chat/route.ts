@@ -137,16 +137,9 @@ export async function POST(req: Request) {
   // Priority: Hugging Face -> Gemini (supports tools) -> Groq -> OpenRouter free -> Anthropic -> OpenAI
   let model: any = null;
   let modelProvider = '';
-
-  if (process.env.HUGGINGFACE_API_KEY) {
-    const huggingface = createHuggingFace({
-      apiKey: process.env.HUGGINGFACE_API_KEY,
-    });
-    
-    // Using native huggingface provider with the meta-llama 3.1 model for tool calling support
-    model = huggingface('meta-llama/Meta-Llama-3.1-8B-Instruct');
-    modelProvider = 'Hugging Face (Llama-3.1-8B)';
-  }
+  
+  // Note: Hugging Face Serverless Inference does not support tool calling schemas required for our visual product cards.
+  // We will default to Gemini or Groq to ensure the UI remains fully functional.
 
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
   if (!model && geminiKey) {
