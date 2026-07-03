@@ -463,7 +463,18 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
         stream: toUIMessageStream({ stream: fallbackStream.fullStream, tools: {}, originalMessages: messages })
       });
     }
-    throw err;
+    
+    console.error('[Kartify API Error]', err);
+    const errorMsg = err?.message || err?.toString() || 'Unknown error occurred.';
+    const errorStream = new ReadableStream<any>({
+      start(controller) {
+        controller.enqueue({ type: 'text-start', id: 'error_msg' });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **Deployment Error Debug:**\n${errorMsg}\n\nPlease share this error message with me!` });
+        controller.enqueue({ type: 'text-end', id: 'error_msg' });
+        controller.close();
+      }
+    });
+    return createUIMessageStreamResponse({ stream: errorStream });
   }
 
   return createUIMessageStreamResponse({
