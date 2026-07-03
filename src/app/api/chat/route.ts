@@ -143,9 +143,9 @@ export async function POST(req: Request) {
       apiKey: process.env.HUGGINGFACE_API_KEY,
     });
     
-    // Using native huggingface provider with the meta-llama model
-    model = huggingface('meta-llama/Meta-Llama-3-8B-Instruct');
-    modelProvider = 'Hugging Face (Llama-3-8B)';
+    // Using native huggingface provider with the meta-llama 3.1 model for tool calling support
+    model = huggingface('meta-llama/Meta-Llama-3.1-8B-Instruct');
+    modelProvider = 'Hugging Face (Llama-3.1-8B)';
   }
 
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
