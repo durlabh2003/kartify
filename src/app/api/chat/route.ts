@@ -141,10 +141,13 @@ export async function POST(req: Request) {
     const huggingface = createOpenAICompatible({
       name: 'huggingface',
       baseURL: 'https://api-inference.huggingface.co/v1/',
-      apiKey: process.env.HUGGINGFACE_API_KEY,
+      headers: {
+        Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+      },
     });
-    model = huggingface.chatModel('meta-llama/Llama-3.2-3B-Instruct');
-    modelProvider = 'Hugging Face (Llama-3.2-3B)';
+    // Switching to a more widely cached model that rarely sleeps on Serverless Inference
+    model = huggingface.chatModel('meta-llama/Meta-Llama-3-8B-Instruct');
+    modelProvider = 'Hugging Face (Llama-3-8B)';
   }
 
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
