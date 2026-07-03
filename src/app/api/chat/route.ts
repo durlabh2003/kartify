@@ -2,6 +2,7 @@ import { google } from '@ai-sdk/google';
 import { anthropic } from '@ai-sdk/anthropic';
 import { openai } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createHuggingFace } from '@ai-sdk/huggingface';
 import { groq } from '@ai-sdk/groq';
 import { streamText, tool, createUIMessageStreamResponse, toUIMessageStream } from 'ai';
 import { z } from 'zod';
@@ -138,35 +139,12 @@ export async function POST(req: Request) {
   let modelProvider = '';
 
   if (process.env.HUGGINGFACE_API_KEY) {
-    // Debug: test HF directly to see exact error
-    try {
-      const debugRes = await fetch('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'meta-llama/Meta-Llama-3-8B-Instruct',
-          messages: [{ role: 'user', content: 'test' }],
-          stream: true
-        })
-      });
-      if (!debugRes.ok) {
-        throw new Error(`HF API HTTP Error: ${debugRes.status} ${debugRes.statusText} - ${await debugRes.text()}`);
-      }
-    } catch (debugErr: any) {
-      throw new Error(`HF Debug Failed: ${debugErr.message}`);
-    }
-
-    const huggingface = createOpenAICompatible({
-      name: 'huggingface',
-      baseURL: 'https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/',
-      headers: {
-        Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-      },
+    const huggingface = createHuggingFace({
+      apiKey: process.env.HUGGINGFACE_API_KEY,
     });
-    model = huggingface.chatModel('meta-llama/Meta-Llama-3-8B-Instruct');
+    
+    // Using native huggingface provider with the meta-llama model
+    model = huggingface('meta-llama/Meta-Llama-3-8B-Instruct');
     modelProvider = 'Hugging Face (Llama-3-8B)';
   }
 
