@@ -464,7 +464,7 @@ export function RecommendationChat() {
               })}
 
               {/* Standard Vercel AI SDK tool rendering */}
-              {m.toolInvocations?.map((toolInvocation: any) => {
+              {(m as any).toolInvocations?.map((toolInvocation: any) => {
                 const { toolCallId, toolName, state, result } = toolInvocation;
                 
                 if (state === 'result') {
