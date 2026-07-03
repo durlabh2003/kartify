@@ -133,13 +133,22 @@ export async function POST(req: Request) {
   const detectedBudget = extractBudget(fullChatText);
 
   // ─── Model Selection ───────────────────────────────────────────────────────
-  // Priority: Gemini (supports tools) → Groq → OpenRouter free → Anthropic → OpenAI
-  // Gemini is prioritized because it supports function/tool calling properly.
+  // Priority: Hugging Face -> Gemini (supports tools) -> Groq -> OpenRouter free -> Anthropic -> OpenAI
   let model: any = null;
   let modelProvider = '';
 
+  if (process.env.HUGGINGFACE_API_KEY) {
+    const huggingface = createOpenAICompatible({
+      name: 'huggingface',
+      baseURL: 'https://api-inference.huggingface.co/v1/',
+      apiKey: process.env.HUGGINGFACE_API_KEY,
+    });
+    model = huggingface.chatModel('meta-llama/Llama-3.2-3B-Instruct');
+    modelProvider = 'Hugging Face (Llama-3.2-3B)';
+  }
+
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
-  if (geminiKey) {
+  if (!model && geminiKey) {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = geminiKey;
     try {
       model = google('gemini-2.0-flash');
