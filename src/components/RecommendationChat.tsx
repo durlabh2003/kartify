@@ -406,12 +406,12 @@ export function RecommendationChat() {
                   );
                 }
                 
-                if (part.type === 'tool-findProducts' || part.type.startsWith('tool-')) {
-                  const toolCallId = (part as any).toolCallId;
-                  const state = (part as any).state;
+                if (part.type === 'tool-invocation' || part.type.startsWith('tool-')) {
+                  const toolCallId = part.toolInvocation?.toolCallId || (part as any).toolCallId;
+                  const state = part.toolInvocation?.state || (part as any).state;
                   
-                  if (state === 'output-available') {
-                    const products: Product[] = (part as any).output;
+                  if (state === 'result' || state === 'output-available') {
+                    const products: Product[] = part.toolInvocation?.result || (part as any).output;
                     if (!products || products.length === 0) return (
                       <div key={toolCallId} className="text-white/40 italic text-xs mt-2 flex items-center gap-1.5 bg-white/5 px-4 py-2.5 rounded-xl border border-white/5">
                         <ShieldAlert size={14} className="text-amber-400" /> No products found for that search.
@@ -427,7 +427,7 @@ export function RecommendationChat() {
                         </div>
                       </div>
                     );
-                  } else if (state === 'output-error') {
+                  } else if (state === 'output-error' || state === 'error') {
                     return (
                       <div key={toolCallId} className="text-red-400 italic text-xs mt-2 flex items-center gap-1.5 bg-red-500/10 px-4 py-2.5 rounded-xl border border-red-500/20">
                         <ShieldAlert size={14} />
