@@ -343,8 +343,8 @@ export async function POST(req: Request) {
     .filter((m: any) => m.content.trim() !== '');
 
   // Determine if this model supports tool calling reliably.
-  // Gemini: YES. Hugging Face: YES. Groq/OpenRouter free models: NO (schema validation errors in multi-turn).
-  const supportsTools = modelProvider.includes('Gemini') || modelProvider.includes('Hugging Face');
+  // Gemini: YES. Hugging Face: YES. Groq/OpenRouter Llama 3.3: YES.
+  const supportsTools = true;
 
   // ── System prompts: one for Gemini (tool-calling), one for Groq (text mode) ──
   const systemPromptWithTools = `You are Kartify AI, a premium personal shopping assistant for Indian consumers.
