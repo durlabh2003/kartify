@@ -338,7 +338,6 @@ export const productService = {
       }
     }
 
-    let rawProducts: (Product & { stock: number; reviewsCount: number })[] = [];
 
     // 1. Try n8n backend first
     if (process.env.N8N_WEBHOOK_URL) {
