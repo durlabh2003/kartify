@@ -63,6 +63,59 @@ async function fetchProductImage(query: string): Promise<string> {
 }
 
 /**
+ * Run Search via n8n backend recommendation model
+ */
+async function searchN8n(query: string, eligiblePlatforms: string[], maxBudget?: number): Promise<(Product & { stock: number; reviewsCount: number })[]> {
+  const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
+  if (!n8nWebhookUrl) return []; // Fall back to Serper/Tavily if n8n is not configured
+
+  console.log(`[productService] Querying n8n API for: "${query}"`);
+  try {
+    const res = await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // 'Authorization': `Bearer ${process.env.N8N_API_KEY}` // Uncomment if n8n requires auth
+      },
+      body: JSON.stringify({
+        query: query,
+        platforms: eligiblePlatforms,
+        maxBudget: maxBudget || 0
+      })
+    });
+    
+    if (!res.ok) {
+      console.error(`n8n webhook failed with status ${res.status}`);
+      return [];
+    }
+
+    const data = await res.json();
+    
+    // Ensure data is an array
+    const productsArray = Array.isArray(data) ? data : data.products || [];
+    
+    return productsArray.map((p: any) => ({
+      id: p.id || Math.random().toString(36).substr(2, 9),
+      title: p.title || 'Unknown Product',
+      description: p.description || '',
+      price: typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0,
+      imageUrl: p.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60',
+      url: p.url || '',
+      rating: typeof p.rating === 'number' ? p.rating : parseFloat(p.rating) || 4.0,
+      category: p.category || 'n8n-recommendation',
+      brand: p.brand || '',
+      platform: p.platform || eligiblePlatforms[0] || 'Unknown',
+      stock: typeof p.stock === 'number' ? p.stock : 10,
+      reviewsCount: typeof p.reviewsCount === 'number' ? p.reviewsCount : 100
+    }));
+  } catch (e) {
+    console.error('n8n fetch error:', e);
+    return [];
+  }
+}
+
+
+/**
  * Run Google Search via Serper API targeted to eligible e-commerce domains
  */
 async function searchSerper(query: string, eligiblePlatforms: string[], maxBudget?: number): Promise<(Product & { stock: number; reviewsCount: number })[]> {
@@ -285,8 +338,15 @@ export const productService = {
       }
     }
 
-    // Attempt Live Search using Serper first, then Tavily
-    if (process.env.SERPER_API_KEY) {
+    let rawProducts: (Product & { stock: number; reviewsCount: number })[] = [];
+
+    // 1. Try n8n backend first
+    if (process.env.N8N_WEBHOOK_URL) {
+      rawProducts = await searchN8n(searchTarget, platforms, intent.maxBudget);
+    }
+
+    // 2. Fall back to Serper if n8n returns nothing or is unconfigured
+    if (rawProducts.length === 0 && process.env.SERPER_API_KEY) {
       console.log(`[productService] Querying Serper API for: "${searchTarget}"${intent.maxBudget ? ` under ₹${intent.maxBudget}` : ''}`);
       rawProducts = await searchSerper(searchTarget, platforms, intent.maxBudget);
     }
