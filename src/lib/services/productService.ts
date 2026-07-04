@@ -65,23 +65,18 @@ async function fetchProductImage(query: string): Promise<string> {
 /**
  * Run Search via n8n backend recommendation model
  */
-async function searchN8n(query: string, eligiblePlatforms: string[], maxBudget?: number): Promise<(Product & { stock: number; reviewsCount: number })[]> {
+async function searchN8n(summary: string): Promise<(Product & { stock: number; reviewsCount: number })[]> {
   const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
   if (!n8nWebhookUrl) return []; // Fall back to Serper/Tavily if n8n is not configured
 
-  console.log(`[productService] Querying n8n API for: "${query}"`);
+  console.log(`[productService] Querying n8n API with summary`);
   try {
     const res = await fetch(n8nWebhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 'Authorization': `Bearer ${process.env.N8N_API_KEY}` // Uncomment if n8n requires auth
       },
-      body: JSON.stringify({
-        query: query,
-        platforms: eligiblePlatforms,
-        maxBudget: maxBudget || 0
-      })
+      body: JSON.stringify({ summary })
     });
     
     if (!res.ok) {
@@ -104,7 +99,7 @@ async function searchN8n(query: string, eligiblePlatforms: string[], maxBudget?:
       rating: typeof p.rating === 'number' ? p.rating : parseFloat(p.rating) || 4.0,
       category: p.category || 'n8n-recommendation',
       brand: p.brand || '',
-      platform: p.platform || eligiblePlatforms[0] || 'Unknown',
+      platform: p.platform || 'Recommended',
       stock: typeof p.stock === 'number' ? p.stock : 10,
       reviewsCount: typeof p.reviewsCount === 'number' ? p.reviewsCount : 100
     }));
@@ -317,34 +312,20 @@ export const productService = {
   },
   
   /**
-   * Complex query combining search, routing, and live integrations (Serper / Tavily / DummyJSON)
+   * Complex query combining search, routing, and live integrations
    */
-  async findRecommendations(intent: { search?: string, category?: string, eligible_platforms?: string[], maxBudget?: number }): Promise<Product[]> {
+  async findRecommendations(intent: { search?: string, category?: string, eligible_platforms?: string[], maxBudget?: number, summary?: string }): Promise<Product[]> {
     let rawProducts: (Product & { stock: number; reviewsCount: number })[] = [];
-    const searchTarget = intent.search || intent.category || 'laptops';
 
-    // Auto-determine eligible platforms based on product/query category if not provided
-    let platforms = intent.eligible_platforms;
-    if (!platforms || platforms.length === 0) {
-      const queryText = searchTarget.toLowerCase();
-      if (queryText.includes('phone') || queryText.includes('laptop') || queryText.includes('electronics') || queryText.includes('audio') || queryText.includes('watch') || queryText.includes('tech')) {
-        platforms = ['Amazon', 'Flipkart'];
-      } else if (queryText.includes('skincare') || queryText.includes('beauty') || queryText.includes('makeup') || queryText.includes('perfume') || queryText.includes('fragrance')) {
-        platforms = ['Nykaa', 'Amazon'];
-      } else if (queryText.includes('shoe') || queryText.includes('shirt') || queryText.includes('dress') || queryText.includes('wear') || queryText.includes('bag') || queryText.includes('fashion') || queryText.includes('clothing')) {
-        platforms = ['Myntra', 'Flipkart', 'Amazon', 'Meesho'];
-      } else {
-        platforms = ['Amazon', 'Flipkart', 'Meesho'];
-      }
-    }
-
-
-    // 1. Try n8n backend first
-    if (process.env.N8N_WEBHOOK_URL) {
-      rawProducts = await searchN8n(searchTarget, platforms, intent.maxBudget);
+    // 1. Try n8n backend first (New dynamic pipeline)
+    if (process.env.N8N_WEBHOOK_URL && intent.summary) {
+      rawProducts = await searchN8n(intent.summary);
     }
 
     // 2. Fall back to Serper if n8n returns nothing or is unconfigured
+    let platforms = intent.eligible_platforms || ['Amazon', 'Flipkart'];
+    let searchTarget = intent.search || intent.category || 'products';
+
     if (rawProducts.length === 0 && process.env.SERPER_API_KEY) {
       console.log(`[productService] Querying Serper API for: "${searchTarget}"${intent.maxBudget ? ` under ₹${intent.maxBudget}` : ''}`);
       rawProducts = await searchSerper(searchTarget, platforms, intent.maxBudget);

@@ -142,175 +142,33 @@ export async function POST(req: Request) {
   // We will default to Gemini or Groq to ensure the UI remains fully functional.
 
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
-  if (!model && geminiKey) {
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY = geminiKey;
-    try {
-      model = google('gemini-2.0-flash');
-      modelProvider = 'Google Gemini 2.0 Flash';
-    } catch {
-      console.warn('[Kartify] Gemini init failed, falling back to Groq.');
-    }
+  if (!geminiKey) {
+    throw new Error('GEMINI_API_KEY is not configured.');
+  }
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = geminiKey;
+  
+  try {
+    model = google('gemini-2.0-flash');
+    modelProvider = 'Google Gemini 2.0 Flash';
+  } catch {
+    throw new Error('Failed to initialize Gemini model.');
   }
 
-  if (!model && process.env.GROQ_API_KEY) {
-    model = groq('llama-3.3-70b-versatile');
-    modelProvider = 'Groq Llama 3.3';
-  } else if (!model && process.env.OPENROUTER_API_KEY) {
-    const openrouter = createOpenAICompatible({
-      name: 'openrouter',
-      baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: process.env.OPENROUTER_API_KEY,
-      headers: {
-        'HTTP-Referer': 'https://kartify.vercel.app',
-        'X-Title': 'Kartify AI',
-      },
-    });
-    const freeModels = [
-      'meta-llama/llama-3.3-70b-instruct:free'
-    ];
-    const modelIndex = Math.floor(Date.now() / 30000) % freeModels.length;
-    model = openrouter.chatModel(freeModels[modelIndex]);
-    modelProvider = `OpenRouter (${freeModels[modelIndex]})`;
-  } else if (!model && process.env.ANTHROPIC_API_KEY) {
-    model = anthropic('claude-3-5-sonnet-latest');
-    modelProvider = 'Anthropic Claude';
-  } else if (!model && process.env.OPENAI_API_KEY) {
-    model = openai('gpt-4o-mini');
-    modelProvider = 'OpenAI GPT';
-  }
 
-  if (!model) {
-    console.warn('[Kartify] No LLM API Keys configured. Using offline mock stream mode.');
-
-    const stream = new ReadableStream<any>({
-      async start(controller) {
-        try {
-          const messageId = `msg_${Math.random().toString(36).substring(2, 9)}`;
-
-          controller.enqueue({ type: 'text-start', id: messageId });
-
-          const hasProductsAlready = messages.some((m: any) => m.parts?.some((p: any) => p.type?.startsWith('tool-')));
-          const isRefinement = hasProductsAlready || userMessagesCount > 2;
-
-          if (!isRefinement) {
-            if (userMessagesCount === 1 && (!hasBudget || !hasRecipient)) {
-              const question = `I can help you find that! To make sure I find the perfect match, who is the recipient, and what is your approximate budget?`;
-              controller.enqueue({ type: 'text-delta', id: messageId, delta: question });
-              controller.enqueue({ type: 'text-end', id: messageId });
-              controller.close();
-              return;
-            }
-            if (userMessagesCount === 2) {
-              const question = `Got it! Are there any specific brand constraints, preferred platforms (Amazon, Myntra, etc.), or key features you care about?`;
-              controller.enqueue({ type: 'text-delta', id: messageId, delta: question });
-              controller.enqueue({ type: 'text-end', id: messageId });
-              controller.close();
-              return;
-            }
-          }
-
-          // Use smarter category detection
-          let searchTerm = detectedCategory || 'smartphones';
-          let eligiblePlatforms = detectedPlatforms;
-
-          // Override with explicit platform mention in last message
-          const lowerMsg = lastUserMsg.toLowerCase();
-          if (lowerMsg.includes('amazon')) eligiblePlatforms = ['Amazon'];
-          else if (lowerMsg.includes('flipkart')) eligiblePlatforms = ['Flipkart'];
-          else if (lowerMsg.includes('myntra')) eligiblePlatforms = ['Myntra'];
-          else if (lowerMsg.includes('nykaa')) eligiblePlatforms = ['Nykaa'];
-          else if (lowerMsg.includes('meesho')) eligiblePlatforms = ['Meesho'];
-
-          let intro = `Analyzing your request...\nSearching ${eligiblePlatforms.join(', ')} for ${searchTerm}${detectedBudget ? ` under ₹${detectedBudget.toLocaleString('en-IN')}` : ''}.\n`;
-          if (isRefinement) intro = `Applying refinement: "${lastUserMsg}"...\n`;
-
-          controller.enqueue({ type: 'text-delta', id: messageId, delta: intro });
-          await new Promise(resolve => setTimeout(resolve, 800));
-
-          const toolCallId = `call_${Math.random().toString(36).substring(2, 9)}`;
-          controller.enqueue({ type: 'tool-input-start', toolCallId, toolName: 'findProducts' });
-          controller.enqueue({
-            type: 'tool-input-available',
-            toolCallId,
-            toolName: 'findProducts',
-            input: { search: searchTerm, eligible_platforms: eligiblePlatforms.join(','), max_budget: detectedBudget ?? undefined }
-          });
-
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          let products = await productService.findRecommendations({
-            search: searchTerm,
-            eligible_platforms: eligiblePlatforms,
-            maxBudget: detectedBudget ?? undefined,
-          });
-
-          const isCheaper = lowerMsg.includes('cheaper') || lowerMsg.includes('less') || lowerMsg.includes('low');
-          const isPremium = lowerMsg.includes('premium') || lowerMsg.includes('expensive') || lowerMsg.includes('quality') || lowerMsg.includes('high');
-
-          products = products.map((p) => {
-            let adjustedPrice = p.price;
-            let titlePrefix = '';
-            if (isCheaper) { adjustedPrice = Math.round(p.price * 0.6); titlePrefix = 'Budget '; }
-            else if (isPremium) { adjustedPrice = Math.round(p.price * 1.8); titlePrefix = 'Premium '; }
-            return {
-              ...p,
-              title: titlePrefix + p.title,
-              price: adjustedPrice,
-              whyThis: isCheaper
-                ? `Refined budget option. Offers high value for money at just ₹${adjustedPrice.toLocaleString('en-IN')}.`
-                : isPremium
-                  ? `Refined premium option with top-tier builds and features.`
-                  : p.whyThis
-            };
-          });
-
-          controller.enqueue({ type: 'tool-output-available', toolCallId, output: products });
-          await new Promise(resolve => setTimeout(resolve, 800));
-
-          let outro = `\nHere are my top 3 picks for **${searchTerm}**${detectedBudget ? ` under ₹${detectedBudget.toLocaleString('en-IN')}` : ''} from ${eligiblePlatforms.join(', ')}:\n- 🛡️ **Safe Pick**: ${products[0]?.title || 'Top rated option'} on ${products[0]?.platform}\n- 💰 **Value Pick**: ${products[1]?.title || 'Best value option'} on ${products[1]?.platform}\n- 🎲 **Surprise Pick**: ${products[2]?.title || 'Unique choice'} on ${products[2]?.platform}\nLet me know if you'd like to refine!`;
-
-          if (isRefinement) {
-            outro = `\nUpdated picks based on your refinement:\n- 🛡️ ${products[0]?.title} on ${products[0]?.platform}\n- 💰 ${products[1]?.title} on ${products[1]?.platform}\n- 🎲 ${products[2]?.title} on ${products[2]?.platform}\nLet me know if you need anything else!`;
-          }
-
-          controller.enqueue({ type: 'text-delta', id: messageId, delta: outro });
-          controller.enqueue({ type: 'text-end', id: messageId });
-          controller.close();
-        } catch (streamErr) {
-          console.error('Error in mock stream:', streamErr);
-          controller.error(streamErr);
-        }
-      }
-    });
-
-    return createUIMessageStreamResponse({ stream });
-  }
 
   console.log(`[Kartify API] Routing query using: ${modelProvider}`);
 
   // Standard live mode with API keys
   const tools = {
     findProducts: tool({
-      description: 'Search for real products from Indian e-commerce platforms (Amazon.in, Flipkart, Myntra, Nykaa, Meesho). Call this whenever you have enough context to recommend products.',
+      description: 'Search for real products from our n8n backend model. Call this ONLY when you have asked all necessary questions and have a complete summary of the user\'s needs.',
       parameters: z.object({
-        query: z.string().describe('Natural language product search query including product type, budget in INR, and intended platforms. Example: "gym shoes under ₹1900 for men on Myntra and Flipkart"'),
+        summary: z.string().describe('A comprehensive summary of all user requirements, preferences, budget, and traits collected during the interview. Example: "Looking for men\'s running shoes under 2000 INR. Prefers Nike or Puma. Needs good arch support."'),
       }),
-      execute: async ({ query }: { query: string }) => {
-        console.log(`[findProducts] query="${query}"`);
+      execute: async ({ summary }: { summary: string }) => {
+        console.log(`[findProducts] summary="${summary}"`);
 
-        // Extract search term from the query
-        const { searchTerm, eligiblePlatforms } = extractCategory(query + ' ' + fullChatText);
-        const budget = extractBudget(query) ?? detectedBudget ?? undefined;
-        const search = searchTerm || query.split(' ').slice(0, 3).join(' ');
-        const platforms = eligiblePlatforms.length > 0 ? eligiblePlatforms : detectedPlatforms;
-
-        console.log(`[findProducts] → search="${search}", platforms=[${platforms.join(',')}], budget=₹${budget}`);
-
-        const products = await productService.findRecommendations({
-          search,
-          eligible_platforms: platforms,
-          maxBudget: budget,
-        });
+        const products = await productService.findRecommendations({ summary });
         return products;
       },
     } as any),
@@ -342,121 +200,30 @@ export async function POST(req: Request) {
     })
     .filter((m: any) => m.content.trim() !== '');
 
-  // Determine if this model supports tool calling reliably.
-  // Gemini: YES. Hugging Face: YES. Groq/OpenRouter free models: NO (schema validation errors in multi-turn).
-  const supportsTools = modelProvider.includes('Gemini') || modelProvider.includes('Hugging Face');
-
-  // ── System prompts: one for Gemini (tool-calling), one for Groq (text mode) ──
-  const systemPromptWithTools = `You are Kartify AI, a premium personal shopping assistant for Indian consumers.
+  const systemPrompt = `You are Kartify AI, a premium, highly dynamic personal shopping assistant.
 
 CONVERSATION RULES:
-1. Ask at most ONE clarifying question at a time.
-2. Gather: (a) product type, (b) who it's for, (c) budget in INR.
-3. Once you have product + budget, call findProducts immediately.
-4. Never recommend from memory — always use the findProducts tool.
+1. Act as a dynamic interviewer. Do NOT follow a fixed questionnaire script. 
+2. Based on the specific product the user wants, determine the most critical questions to narrow down the choice (e.g., if skincare, ask about skin type; if laptop, ask about RAM/CPU; if shoes, ask about use-case).
+3. Ask exactly ONE mandatory question at a time.
+4. At the very end of your message, provide 2-4 likely options for the user formatted strictly as a Markdown bulleted list. The UI will extract these as clickable buttons. (e.g.:\\n- Option A\\n- Option B\\n- Type your own answer)
+5. Keep track of all answers in your context.
+6. Once you have a complete picture of their needs (usually 2-3 questions), STOP asking questions. DO NOT present any products yet.
+7. Instead, generate a comprehensive text \`summary\` of ALL their requirements and immediately call the \`findProducts\` tool with it.
 
-WHEN YOU CALL findProducts:
-- Pass a single "query" string, e.g. "gym shoes under ₹1900 on Myntra and Flipkart"
+AFTER \`findProducts\` TOOL RETURNS:
+- The tool will return a JSON array of product options from our n8n backend, including image links.
+- Rephrase and present the products beautifully to the user.
+- Highlight why each product matches their specific traits.`;
 
-AFTER TOOL RETURNS:
-- Show exactly 3 picks: 🛡️ Safe Pick | 💰 Value Pick | 🎲 Surprise Pick
-- Use EXACT names, prices, platforms from the tool result.`;
-
-  const systemPromptTextMode = `You are Kartify AI, a premium personal shopping assistant for Indian consumers.
-
-CONVERSATION RULES:
-1. Ask at most ONE clarifying question at a time. Keep it short.
-2. Gather: (a) product type, (b) who it's for, (c) budget in INR.
-3. Once you have enough info, present recommendations DIRECTLY from the REAL PRODUCT DATA below.
-
-CRITICAL RULES:
-- Do NOT say "I'll search", "waiting for results", or "let me check" — you already have the products below.
-- Do NOT call any tools or functions.
-- Present the products IMMEDIATELY using this format:
-
-🛡️ **Safe Pick** — [Product Name] | ₹[Price] | [Platform] | [Why: 1 sentence]
-💰 **Value Pick** — [Product Name] | ₹[Price] | [Platform] | [Why: 1 sentence]
-🎲 **Surprise Pick** — [Product Name] | ₹[Price] | [Platform] | [Why: 1 sentence]
-
-Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
-
-  const systemPrompt = supportsTools ? systemPromptWithTools : systemPromptTextMode;
-
-  // Pre-fetch real products whenever we have enough context.
-  let productContext = '';
-  let prefetchedProducts: any[] | null = null;
-  const shouldPrefetch = detectedCategory && (hasBudget || hasRecipient || userMessagesCount >= 2);
-  if (shouldPrefetch) {
-    try {
-      console.log(`[Kartify] Pre-fetching products: category="${detectedCategory}" budget=₹${detectedBudget}`);
-      const products = await productService.findRecommendations({
-        search: detectedCategory,
-        eligible_platforms: detectedPlatforms,
-        maxBudget: detectedBudget ?? undefined,
-      });
-      if (products && products.length > 0) {
-        prefetchedProducts = products;
-        productContext = '\n\nREAL PRODUCT DATA (present these directly as your recommendations):\n' +
-          products.slice(0, 6).map((p: any, i: number) =>
-            `${i + 1}. "${p.title}" — ₹${p.price.toLocaleString('en-IN')} on ${p.platform} | Rating: ${p.rating}/5 | URL: ${p.url || getSearchUrl(p.platform, p.title)}`
-          ).join('\n');
-      }
-    } catch (e) {
-      console.warn('[Kartify] Product pre-fetch failed:', e);
-    }
-  }
-
-  const finalSystemPrompt = systemPrompt + productContext;
-
-  const runStream = (mdl: any, withTools: boolean) => {
-    if (withTools) {
-      return streamText({ model: mdl, system: finalSystemPrompt, messages: coreMessages, tools });
-    }
-    return streamText({ model: mdl, system: finalSystemPrompt, messages: coreMessages });
+  const runStream = (mdl: any) => {
+    return streamText({ model: mdl, system: systemPrompt, messages: coreMessages, tools });
   };
 
   let result;
   try {
-    result = runStream(model, supportsTools);
+    result = runStream(model);
   } catch (err: any) {
-    const isRateLimit = err?.message?.includes('quota') || err?.message?.includes('rate') || err?.statusCode === 429 || err?.status === 429;
-    if (isRateLimit && process.env.GROQ_API_KEY && modelProvider.includes('Gemini')) {
-      console.warn('[Kartify] Gemini rate-limited. Falling back to Groq (text mode with injected products).');
-      const fallbackModel = groq('llama-3.3-70b-versatile');
-
-      // Products were already pre-fetched above — reuse productContext.
-      // If not pre-fetched yet (budget/category just arrived), fetch now.
-      let fallbackContext = productContext;
-      if (!fallbackContext && detectedCategory) {
-        try {
-          const prefetched = await productService.findRecommendations({
-            search: detectedCategory,
-            eligible_platforms: detectedPlatforms,
-            maxBudget: detectedBudget ?? undefined,
-          });
-          if (prefetched.length > 0) {
-            fallbackContext = '\n\nREAL PRODUCT DATA — present ONLY these products as your recommendations:\n' +
-              prefetched.slice(0, 6).map((p: any, i: number) =>
-                `${i + 1}. "${p.title}" — ₹${p.price.toLocaleString('en-IN')} on ${p.platform} | Rating: ${p.rating}/5`
-              ).join('\n') +
-              '\n\nFormat: 🛡️ Safe Pick / 💰 Value Pick / 🎲 Surprise Pick. Use ONLY these products.';
-          }
-        } catch (e) {
-          console.warn('[Kartify] Groq fallback pre-fetch failed:', e);
-        }
-      }
-
-      // Use Groq in plain text mode — NO tool calling (unreliable in multi-turn)
-      const fallbackStream = streamText({
-        model: fallbackModel,
-        system: systemPrompt + fallbackContext,
-        messages: coreMessages,
-      });
-      return createUIMessageStreamResponse({
-        stream: toUIMessageStream({ stream: fallbackStream.fullStream, tools: {}, originalMessages: messages })
-      });
-    }
-    
     console.error('[Kartify API Error]', err);
     const errorMsg = err?.message || err?.toString() || 'Unknown error occurred.';
     const errorStream = new ReadableStream<any>({
@@ -470,42 +237,11 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
     return createUIMessageStreamResponse({ stream: errorStream });
   }
 
-  // ── Force Product Cards for Text Mode (OpenRouter/Groq) ──
-  // If the model does not support native tools, Vercel AI SDK won't emit tool calls.
-  // We manually prepend the fetched products as a tool-invocation so the UI renders the graphical cards!
-  if (!supportsTools && prefetchedProducts) {
-    const customStream = new ReadableStream<any>({
-      async start(controller) {
-        // 1. Manually trigger the tool UI on the frontend using standard Vercel SDK chunk types
-        const toolCallId = `call_${Math.random().toString(36).substring(2, 9)}`;
-        controller.enqueue({ type: 'tool-input-start', toolCallId, toolName: 'findProducts' });
-        controller.enqueue({ type: 'tool-input-available', toolCallId, toolName: 'findProducts', input: { search: detectedCategory, max_budget: detectedBudget } });
-        controller.enqueue({ type: 'tool-output-available', toolCallId, output: prefetchedProducts });
-
-        // 2. Stream the LLM's text output right after
-        const msgId = `msg_${Math.random().toString(36).substring(2, 9)}`;
-        controller.enqueue({ type: 'text-start', id: msgId });
-        
-        try {
-          for await (const chunk of result.textStream) {
-            controller.enqueue({ type: 'text-delta', id: msgId, delta: chunk });
-          }
-        } catch (e) {
-          console.error('[Kartify] custom stream error:', e);
-        }
-        
-        controller.enqueue({ type: 'text-end', id: msgId });
-        controller.close();
-      }
-    });
-    return createUIMessageStreamResponse({ stream: customStream });
-  }
-
   // ── Native Tool Calling Stream (Gemini) ──
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
       stream: result.fullStream,
-      tools: supportsTools ? tools : {},
+      tools: tools,
       originalMessages: messages
     })
   });

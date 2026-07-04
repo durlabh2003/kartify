@@ -56,40 +56,42 @@ function ThinkingIndicator() {
 }
 
 // ── Quick reply option detection ─────────────────────────────────────────────
-function detectQuickOptions(text: string): string[] | null {
-  // Recipient / who is it for
-  if (/(who|whom).{0,30}(for|is|shopping|buying|gift)|(for whom|recipient|buying this for|gift.*for|shopping.*for)/i.test(text)) {
-    return ['Myself', 'Mom / Mother', 'Dad / Father', 'Partner / Spouse', 'Friend', 'Sibling', 'Kid / Child'];
+function extractOptionsAndCleanText(text: string): { cleanText: string, options: string[] | null } {
+  const lines = text.split('\n');
+  const options: string[] = [];
+  let i = lines.length - 1;
+  
+  // Skip trailing empty lines
+  while (i >= 0 && lines[i].trim() === '') {
+    i--;
   }
-  // Budget / price
-  if (/(budget|how much|price range|spend|afford|cost|inr|rupee)/i.test(text)) {
-    return ['Under ₹500', '₹500 – ₹1,000', '₹1,000 – ₹3,000', '₹3,000 – ₹5,000', 'Above ₹5,000'];
+  
+  // Read bullet points from bottom up
+  while (i >= 0) {
+    const line = lines[i].trim();
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      options.unshift(line.substring(2).trim());
+      i--;
+    } else {
+      break;
+    }
   }
-  // Occasion / purpose
-  if (/(occasion|event|celebrat|purpose|reason|why)/i.test(text)) {
-    return ['Birthday 🎂', 'Anniversary 💍', 'Festival / Diwali 🪔', 'Daily Use', 'Just Because 🎁'];
+  
+  if (options.length > 0) {
+    const cleanText = lines.slice(0, i + 1).join('\n').trim();
+    // Automatically ensure "Type your own answer" isn't duplicated if AI already provided it
+    const hasCustom = options.some(o => o.toLowerCase().includes('type'));
+    if (!hasCustom) {
+      options.push('Type your own answer');
+    }
+    return { cleanText, options };
   }
-  // Category / product type
-  if (/(type|kind|category|what.*product|what.*looking|what.*need|interest|hobby|hobbies|thinking of)/i.test(text)) {
-    return ['Electronics', 'Fashion / Clothing', 'Shoes / Footwear', 'Skincare / Beauty', 'Books', 'Food & Gourmet', 'Accessories'];
-  }
-  // Platform preference
-  if (/(platform|website|site|where.*shop|prefer.*shop|online store)/i.test(text)) {
-    return ['Amazon', 'Flipkart', 'Myntra', 'Nykaa', 'Meesho', 'Any Platform'];
-  }
-  // Use case / style
-  if (/(daily|gym|office|workout|casual|formal|occasion|style|wear|activity)/i.test(text)) {
-    return ['Casual / Daily Wear', 'Formal / Office', 'Gym / Sports', 'Party / Festive', 'Outdoor / Travel'];
-  }
-  // Gender / who is using
-  if (/(gender|male|female|men|women|boy|girl|himself|herself)/i.test(text)) {
-    return ['Men', 'Women', 'Kids / Unisex'];
-  }
-  return null;
+  
+  return { cleanText: text, options: null };
 }
 
 function QuickReplies({ text, onSelect, disabled }: { text: string; onSelect: (v: string) => void; disabled: boolean }) {
-  const options = detectQuickOptions(text);
+  const { options } = extractOptionsAndCleanText(text);
   if (!options) return null;
   return (
     <motion.div
@@ -102,7 +104,7 @@ function QuickReplies({ text, onSelect, disabled }: { text: string; onSelect: (v
       {options.map(opt => (
         <button
           key={opt}
-          onClick={() => !disabled && onSelect(opt)}
+          onClick={() => !disabled && onSelect(opt === 'Type your own answer' ? '' : opt)}
           disabled={disabled}
           className="px-3 py-1.5 text-xs rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-medium"
         >
@@ -390,6 +392,13 @@ export function RecommendationChat() {
             >
               {(m.parts || [{ type: 'text', text: (m as any).text || (m as any).content }]).map((part: any, idx: number) => {
                 if (part.type === 'text') {
+                  let displayText = part.text;
+                  // If AI message, clean the options from the bubble
+                  if (m.role === 'assistant') {
+                    const { cleanText } = extractOptionsAndCleanText(part.text);
+                    displayText = cleanText;
+                  }
+                  
                   return (
                     <div 
                       key={`text-${idx}`}
@@ -400,7 +409,7 @@ export function RecommendationChat() {
                       }`}
                     >
                       <div className="prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-black/50 whitespace-pre-line">
-                        {part.text}
+                        {displayText}
                       </div>
                     </div>
                   );
@@ -528,7 +537,9 @@ export function RecommendationChat() {
             ?.filter((p: any) => p.type === 'text')
             .map((p: any) => p.text || '')
             .join(' ') || '';
-          if (!aiText.includes('?')) return null;
+          
+          const { options } = extractOptionsAndCleanText(aiText);
+          if (!options || options.length === 0) return null;
           return (
             <AnimatePresence>
               <QuickReplies
