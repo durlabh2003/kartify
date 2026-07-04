@@ -527,6 +527,19 @@ export function RecommendationChat() {
           ))}
         </AnimatePresence>
         
+        {status === 'error' && (
+          <div className="flex flex-col items-start w-full gap-3 mt-2">
+            <div className="max-w-[85%] px-5 py-3 rounded-2xl text-sm bg-red-500/10 text-red-200 border border-red-500/20 rounded-bl-sm flex items-center gap-2">
+              <ShieldAlert size={16} className="text-red-400" />
+              <span>
+                <strong>API Connection Failed</strong><br/>
+                Make sure you have added your <code>GEMINI_API_KEY</code> and <code>N8N_WEBHOOK_URL</code> to the Vercel Environment Variables, and that you have triggered a new deployment.
+              </span>
+            </div>
+          </div>
+        )}
+        
+
         {/* Quick replies after last AI message */}
         {!isLoading && (() => {
           const lastAI = [...messages].reverse().find(m => m.role === 'assistant');
