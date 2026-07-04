@@ -218,6 +218,7 @@ async function searchTavily(query: string): Promise<(Product & { stock: number; 
         rating: parseFloat((3.9 + Math.random() * 0.9).toFixed(1)),
         category: 'Tavily Search',
         platform,
+        url: item.url,
         stock: 8,
         reviewsCount: 75
       };
@@ -367,6 +368,7 @@ export const productService = {
         description: p.description,
         price: p.price,
         imageUrl: p.imageUrl,
+        url: p.url,
         rating: p.rating,
         category: p.category,
         brand: p.brand || platform,
