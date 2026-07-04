@@ -476,28 +476,22 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
   if (!supportsTools && prefetchedProducts) {
     const customStream = new ReadableStream<any>({
       async start(controller) {
-        // 1. Manually trigger the tool UI on the frontend
+        // 1. Manually trigger the tool UI on the frontend using standard Vercel SDK chunk types
         const toolCallId = `call_${Math.random().toString(36).substring(2, 9)}`;
-        controller.enqueue({
-          type: 'tool-invocation',
-          toolInvocation: {
-            toolCallId,
-            toolName: 'findProducts',
-            args: { search: detectedCategory, max_budget: detectedBudget },
-            state: 'result',
-            result: prefetchedProducts
-          }
-        });
+        controller.enqueue({ type: 'tool-input-start', toolCallId, toolName: 'findProducts' });
+        controller.enqueue({ type: 'tool-input-available', toolCallId, toolName: 'findProducts', input: { search: detectedCategory, max_budget: detectedBudget } });
+        controller.enqueue({ type: 'tool-output-available', toolCallId, output: prefetchedProducts });
 
         // 2. Stream the LLM's text output right after
-        const reader = result.textStream.getReader();
         const msgId = `msg_${Math.random().toString(36).substring(2, 9)}`;
         controller.enqueue({ type: 'text-start', id: msgId });
         
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          controller.enqueue({ type: 'text-delta', id: msgId, delta: value });
+        try {
+          for await (const chunk of result.textStream) {
+            controller.enqueue({ type: 'text-delta', id: msgId, delta: chunk });
+          }
+        } catch (e) {
+          console.error('[Kartify] custom stream error:', e);
         }
         
         controller.enqueue({ type: 'text-end', id: msgId });
