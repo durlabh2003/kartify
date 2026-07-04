@@ -343,8 +343,8 @@ export async function POST(req: Request) {
     .filter((m: any) => m.content.trim() !== '');
 
   // Determine if this model supports tool calling reliably.
-  // Gemini: YES. Hugging Face: YES. Groq/OpenRouter Llama 3.3: YES.
-  const supportsTools = true;
+  // Gemini: YES. Hugging Face: YES. Groq/OpenRouter free models: NO (schema validation errors in multi-turn).
+  const supportsTools = modelProvider.includes('Gemini') || modelProvider.includes('Hugging Face');
 
   // ── System prompts: one for Gemini (tool-calling), one for Groq (text mode) ──
   const systemPromptWithTools = `You are Kartify AI, a premium personal shopping assistant for Indian consumers.
@@ -384,6 +384,7 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
 
   // Pre-fetch real products whenever we have enough context.
   let productContext = '';
+  let prefetchedProducts: any[] | null = null;
   const shouldPrefetch = detectedCategory && (hasBudget || hasRecipient || userMessagesCount >= 2);
   if (shouldPrefetch) {
     try {
@@ -394,6 +395,7 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
         maxBudget: detectedBudget ?? undefined,
       });
       if (products && products.length > 0) {
+        prefetchedProducts = products;
         productContext = '\n\nREAL PRODUCT DATA (present these directly as your recommendations):\n' +
           products.slice(0, 6).map((p: any, i: number) =>
             `${i + 1}. "${p.title}" — ₹${p.price.toLocaleString('en-IN')} on ${p.platform} | Rating: ${p.rating}/5 | URL: ${p.url || getSearchUrl(p.platform, p.title)}`
@@ -416,7 +418,6 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
   let result;
   try {
     result = runStream(model, supportsTools);
-    await result.usage;
   } catch (err: any) {
     const isRateLimit = err?.message?.includes('quota') || err?.message?.includes('rate') || err?.statusCode === 429 || err?.status === 429;
     if (isRateLimit && process.env.GROQ_API_KEY && modelProvider.includes('Gemini')) {
@@ -469,6 +470,44 @@ Use ONLY products listed in REAL PRODUCT DATA. Never invent names or prices.`;
     return createUIMessageStreamResponse({ stream: errorStream });
   }
 
+  // ── Force Product Cards for Text Mode (OpenRouter/Groq) ──
+  // If the model does not support native tools, Vercel AI SDK won't emit tool calls.
+  // We manually prepend the fetched products as a tool-invocation so the UI renders the graphical cards!
+  if (!supportsTools && prefetchedProducts) {
+    const customStream = new ReadableStream<any>({
+      async start(controller) {
+        // 1. Manually trigger the tool UI on the frontend
+        const toolCallId = `call_${Math.random().toString(36).substring(2, 9)}`;
+        controller.enqueue({
+          type: 'tool-invocation',
+          toolInvocation: {
+            toolCallId,
+            toolName: 'findProducts',
+            args: { search: detectedCategory, max_budget: detectedBudget },
+            state: 'result',
+            result: prefetchedProducts
+          }
+        });
+
+        // 2. Stream the LLM's text output right after
+        const reader = result.textStream.getReader();
+        const msgId = `msg_${Math.random().toString(36).substring(2, 9)}`;
+        controller.enqueue({ type: 'text-start', id: msgId });
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue({ type: 'text-delta', id: msgId, delta: value });
+        }
+        
+        controller.enqueue({ type: 'text-end', id: msgId });
+        controller.close();
+      }
+    });
+    return createUIMessageStreamResponse({ stream: customStream });
+  }
+
+  // ── Native Tool Calling Stream (Gemini) ──
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
       stream: result.fullStream,
