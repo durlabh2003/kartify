@@ -143,15 +143,31 @@ export async function POST(req: Request) {
 
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
   if (!geminiKey) {
-    throw new Error('GEMINI_API_KEY is not configured.');
+    const errorStream = new ReadableStream<any>({
+      start(controller) {
+        controller.enqueue({ type: 'text-start', id: 'error_msg' });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Key Missing:**\nPlease add your \`GEMINI_API_KEY\` to your environment variables to use the dynamic interviewer!` });
+        controller.enqueue({ type: 'text-end', id: 'error_msg' });
+        controller.close();
+      }
+    });
+    return createUIMessageStreamResponse({ stream: errorStream });
   }
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = geminiKey;
   
   try {
     model = google('gemini-2.0-flash');
     modelProvider = 'Google Gemini 2.0 Flash';
-  } catch {
-    throw new Error('Failed to initialize Gemini model.');
+  } catch (err: any) {
+    const errorStream = new ReadableStream<any>({
+      start(controller) {
+        controller.enqueue({ type: 'text-start', id: 'error_msg' });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Error:**\nFailed to initialize Gemini. Check your API key. Error: ${err.message}` });
+        controller.enqueue({ type: 'text-end', id: 'error_msg' });
+        controller.close();
+      }
+    });
+    return createUIMessageStreamResponse({ stream: errorStream });
   }
 
 
