@@ -137,12 +137,12 @@ export async function POST(req: Request) {
   let model: any = null;
   let modelProvider = '';
 
-  const openrouterKey = process.env.OPENROUTER_API_KEY;
-  if (!openrouterKey) {
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) {
     const errorStream = new ReadableStream<any>({
       start(controller) {
         controller.enqueue({ type: 'text-start', id: 'error_msg' });
-        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Key Missing:**\nPlease add your \`OPENROUTER_API_KEY\` to your environment variables!` });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Key Missing:**\nPlease add your \`GROQ_API_KEY\` to your environment variables!` });
         controller.enqueue({ type: 'text-end', id: 'error_msg' });
         controller.close();
       }
@@ -151,19 +151,14 @@ export async function POST(req: Request) {
   }
 
   try {
-    const openrouter = createOpenAICompatible({
-      name: 'openrouter',
-      baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: openrouterKey,
-    });
-    // Using the free tier of OpenAI OSS 20B through OpenRouter (confirmed live)
-    model = openrouter('openai/gpt-oss-20b:free');
-    modelProvider = 'OpenRouter (OpenAI OSS 20B Free)';
+    // Using Groq Llama 3.1 8B Instant for blazing fast speed and reliable tool calling
+    model = groq('llama-3.1-8b-instant');
+    modelProvider = 'Groq (Llama 3.1 8B)';
   } catch (err: any) {
     const errorStream = new ReadableStream<any>({
       start(controller) {
         controller.enqueue({ type: 'text-start', id: 'error_msg' });
-        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Error:**\nFailed to initialize OpenRouter. Check your API key. Error: ${err.message}` });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Error:**\nFailed to initialize Groq. Check your API key. Error: ${err.message}` });
         controller.enqueue({ type: 'text-end', id: 'error_msg' });
         controller.close();
       }
