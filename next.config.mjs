@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Fix Windows long path warning
-  outputFileTracingRoot: process.cwd(),
+  // outputFileTracingRoot: process.cwd(),
 
   // Allow external image domains for product images
   images: {

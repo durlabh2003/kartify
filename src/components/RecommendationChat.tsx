@@ -529,10 +529,10 @@ export function RecommendationChat() {
                               });
                               if (!res.ok) throw new Error('Search failed');
                               const products = await res.json();
-                              addToolResult({ toolCallId, result: products });
+                              addToolResult({ tool: 'findProducts', toolCallId, output: products });
                             } catch (err) {
                               console.error('Search error:', err);
-                              addToolResult({ toolCallId, result: [] });
+                              addToolResult({ tool: 'findProducts', toolCallId, output: [] });
                             } finally {
                               setConfirmingTools(prev => ({ ...prev, [toolCallId]: false }));
                             }
