@@ -156,9 +156,9 @@ export async function POST(req: Request) {
       baseURL: 'https://openrouter.ai/api/v1',
       apiKey: openrouterKey,
     });
-    // Using the free tier of Llama 3.3 70B Instruct through OpenRouter
-    model = openrouter('meta-llama/llama-3.3-70b-instruct:free');
-    modelProvider = 'OpenRouter (Llama 3.3 70B Free)';
+    // Using the free tier of OpenAI OSS 20B through OpenRouter (confirmed live)
+    model = openrouter('openai/gpt-oss-20b:free');
+    modelProvider = 'OpenRouter (OpenAI OSS 20B Free)';
   } catch (err: any) {
     const errorStream = new ReadableStream<any>({
       start(controller) {
