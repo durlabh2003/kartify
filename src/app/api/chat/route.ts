@@ -134,43 +134,42 @@ export async function POST(req: Request) {
   const detectedBudget = extractBudget(fullChatText);
 
   // ─── Model Selection ───────────────────────────────────────────────────────
-  // Priority: Hugging Face -> Gemini (supports tools) -> Groq -> OpenRouter free -> Anthropic -> OpenAI
   let model: any = null;
   let modelProvider = '';
-  
-  // Note: Hugging Face Serverless Inference does not support tool calling schemas required for our visual product cards.
-  // We will default to Gemini or Groq to ensure the UI remains fully functional.
 
-  const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (!openrouterKey) {
     const errorStream = new ReadableStream<any>({
       start(controller) {
         controller.enqueue({ type: 'text-start', id: 'error_msg' });
-        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Key Missing:**\nPlease add your \`GEMINI_API_KEY\` to your environment variables to use the dynamic interviewer!` });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Key Missing:**\nPlease add your \`OPENROUTER_API_KEY\` to your environment variables!` });
         controller.enqueue({ type: 'text-end', id: 'error_msg' });
         controller.close();
       }
     });
     return createUIMessageStreamResponse({ stream: errorStream });
   }
-  process.env.GOOGLE_GENERATIVE_AI_API_KEY = geminiKey;
-  
+
   try {
-    model = google('gemini-2.0-flash');
-    modelProvider = 'Google Gemini 2.0 Flash';
+    const openrouter = createOpenAICompatible({
+      name: 'openrouter',
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: openrouterKey,
+    });
+    // Using the free tier of Gemini 2.0 Pro Experimental through OpenRouter
+    model = openrouter('google/gemini-2.0-pro-exp-0205:free');
+    modelProvider = 'OpenRouter (Gemini 2.0 Pro Exp Free)';
   } catch (err: any) {
     const errorStream = new ReadableStream<any>({
       start(controller) {
         controller.enqueue({ type: 'text-start', id: 'error_msg' });
-        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Error:**\nFailed to initialize Gemini. Check your API key. Error: ${err.message}` });
+        controller.enqueue({ type: 'text-delta', id: 'error_msg', delta: `⚠️ **API Error:**\nFailed to initialize OpenRouter. Check your API key. Error: ${err.message}` });
         controller.enqueue({ type: 'text-end', id: 'error_msg' });
         controller.close();
       }
     });
     return createUIMessageStreamResponse({ stream: errorStream });
   }
-
-
 
   console.log(`[Kartify API] Routing query using: ${modelProvider}`);
 
