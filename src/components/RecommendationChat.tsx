@@ -69,8 +69,9 @@ function extractOptionsAndCleanText(text: string): { cleanText: string, options:
   // Read bullet points from bottom up
   while (i >= 0) {
     const line = lines[i].trim();
-    if (line.startsWith('- ') || line.startsWith('* ')) {
-      options.unshift(line.substring(2).trim());
+    const match = line.match(/^[-*•]\s+(.+)$/) || line.match(/^\d+\.\s+(.+)$/) || line.match(/^[a-zA-Z\d]+\)\s+(.+)$/);
+    if (match) {
+      options.unshift(match[1].trim());
       i--;
     } else {
       break;
