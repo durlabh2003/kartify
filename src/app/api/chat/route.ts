@@ -256,8 +256,14 @@ After findProducts returns, present the products in a warm, personalized way. Ex
 - ✅ ALWAYS end Phase 1 messages with a bullet-list of options.`;
 
 
+  // ── Code-level gate: Only unlock the findProducts tool after the user has
+  // answered at least 2 clarifying questions (i.e., 3+ user messages total).
+  // This prevents the model from skipping the interview phase entirely,
+  // regardless of what the system prompt says.
+  const toolsToUse = userMessagesCount >= 3 ? tools : {};
+
   const runStream = (mdl: any) => {
-    return streamText({ model: mdl, system: systemPrompt, messages: coreMessages, tools });
+    return streamText({ model: mdl, system: systemPrompt, messages: coreMessages, tools: toolsToUse });
   };
 
   let result;
