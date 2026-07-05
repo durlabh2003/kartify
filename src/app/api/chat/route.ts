@@ -175,12 +175,6 @@ export async function POST(req: Request) {
       parameters: z.object({
         summary: z.string().describe('A comprehensive summary of all user requirements, preferences, budget, and traits collected during the interview. Example: "Looking for men\'s running shoes under 2000 INR. Prefers Nike or Puma. Needs good arch support."'),
       }),
-      execute: async ({ summary }: { summary: string }) => {
-        console.log(`[findProducts] summary="${summary}"`);
-
-        const products = await productService.findRecommendations({ summary });
-        return products;
-      },
     } as any),
   };
 

@@ -76,7 +76,7 @@ async function searchN8n(summary: string): Promise<(Product & { stock: number; r
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ summary })
+      body: JSON.stringify({ message: summary })
     });
     
     if (!res.ok) {

@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { ProductCard } from './ProductCard';
 import { Product } from '../lib/types/product';
-import { Send, Loader2, Sparkles, ShoppingBag, Gift, Laptop, Sparkle, ShieldAlert, Mic, Search, Brain, Zap } from 'lucide-react';
+import { Send, Loader2, Sparkles, ShoppingBag, Gift, Laptop, Sparkle, ShieldAlert, Mic, Search, Brain, Zap, CheckCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
@@ -125,8 +125,10 @@ const QUICK_PROMPTS = [
 
 export function RecommendationChat() {
   const chatContext = useChat();
-  const { messages, sendMessage, status } = chatContext;
+  const { messages, sendMessage, status, addToolResult } = chatContext;
   const isLoading = status === 'submitted' || status === 'streaming';
+  
+  const [confirmingTools, setConfirmingTools] = useState<Record<string, boolean>>({});
   
   if (typeof window !== 'undefined') {
     (window as any).chatDebugMessages = messages;
@@ -498,6 +500,49 @@ export function RecommendationChat() {
                   return (
                     <div key={toolCallId} className="text-red-400 italic text-xs mt-2 flex items-center gap-1.5 bg-red-500/10 px-4 py-2.5 rounded-xl border border-red-500/20">
                       <ShieldAlert size={14} /> Error searching database.
+                    </div>
+                  );
+                } else if (toolName === 'findProducts' && state === 'call' && !confirmingTools[toolCallId]) {
+                  return (
+                    <div key={toolCallId} className="w-full max-w-2xl bg-white/5 border border-white/10 rounded-2xl p-5 mt-3 backdrop-blur-md flex flex-col gap-4 shadow-xl">
+                      <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
+                        <CheckCircle size={18} />
+                        Confirm Requirements Summary
+                      </div>
+                      <p className="text-white/70 text-xs leading-relaxed">
+                        I have summarized your shopping requirements. Please confirm if this is correct before we run the search:
+                      </p>
+                      <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-white/90 text-sm whitespace-pre-wrap italic leading-relaxed">
+                        {toolInvocation.args.summary}
+                      </div>
+                      <div className="flex gap-3 justify-end mt-1">
+                        <button
+                          onClick={async () => {
+                            setConfirmingTools(prev => ({ ...prev, [toolCallId]: true }));
+                            try {
+                              const res = await fetch('/api/search', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ summary: toolInvocation.args.summary })
+                              });
+                              if (!res.ok) throw new Error('Search failed');
+                              const products = await res.json();
+                              addToolResult({ toolCallId, result: products });
+                            } catch (err) {
+                              console.error('Search error:', err);
+                              addToolResult({ toolCallId, result: [] });
+                            } finally {
+                              setConfirmingTools(prev => ({ ...prev, [toolCallId]: false }));
+                            }
+                          }}
+                          className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-600 active:scale-95 transition-all text-white font-medium text-xs shadow-lg shadow-emerald-500/20"
+                        >
+                          <Search size={14} />
+                          Confirm & Search
+                        </button>
+                      </div>
                     </div>
                   );
                 } else {
